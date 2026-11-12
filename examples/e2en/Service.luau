@@ -82,33 +82,15 @@ local function introduce(sender: Player, recipient: Player, name: string)
 	IntroductionService:ProcessChatMessage(sender, recipient, "{" .. name .. "}")
 end
 
-local function attachUnavailableMethods(service: any)
-	function service:SetPlayerMuted(): boolean
-		return false
+local function loadOldChatServer(): any
+	local loaded, githubModule = GitHubLoader.Load(SOURCE)
+	if loaded then
+		return githubModule
 	end
-	function service:SetChatLogsEnabled() end
-	function service:IsChatLogsEnabled(): boolean
-		return false
-	end
-	function service:IsTemporarilyMuted(): boolean
-		return false
-	end
-	function service:MutePlayer() end
-	function service:SetEnabled() end
-	function service:Enable() end
-	function service:Disable() end
-	function service:IsEnabled(): boolean
-		return false
-	end
-	function service:OnMessageDelivered() end
+	return require(script.OldChatServer)
 end
 
-local loaded, OldChatServer = GitHubLoader.Load(SOURCE)
-if not loaded then
-	warn(`[OldChatService] Running without chat: {OldChatServer}`)
-	attachUnavailableMethods(OldChatService)
-	return OldChatService
-end
+local OldChatServer = loadOldChatServer()
 
 OldChatServer.Attach(OldChatService, {
 	Filters = script.Parent.Shared.Filters,

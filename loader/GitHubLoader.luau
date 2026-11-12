@@ -3,6 +3,7 @@ local HttpService = game:GetService("HttpService")
 local RAW_URL_FORMAT = "https://raw.githubusercontent.com/%s/%s/%s"
 local MAX_ATTEMPTS = 3
 local RETRY_DELAY = 1
+local HTTP_DISABLED_MARKER = "not enabled"
 
 export type Source = {
 	Repository: string,
@@ -13,6 +14,10 @@ export type Source = {
 local GitHubLoader = {}
 
 local loadedModules: { [string]: any } = {}
+
+local function isLoadstringAvailable(): boolean
+	return loadstring("return true") ~= nil
+end
 
 local function fetch(url: string): (boolean, string)
 	local lastError = ""
@@ -26,6 +31,10 @@ local function fetch(url: string): (boolean, string)
 		end
 
 		lastError = tostring(result)
+		if string.find(lastError, HTTP_DISABLED_MARKER, 1, true) then
+			return false, lastError
+		end
+
 		if attempt < MAX_ATTEMPTS then
 			task.wait(RETRY_DELAY * attempt)
 		end
@@ -44,6 +53,10 @@ function GitHubLoader.Load(source: Source): (boolean, any)
 	local cached = loadedModules[url]
 	if cached ~= nil then
 		return true, cached
+	end
+
+	if not isLoadstringAvailable() then
+		return false, "LoadStringEnabled is off in this place"
 	end
 
 	local fetched, body = fetch(url)
