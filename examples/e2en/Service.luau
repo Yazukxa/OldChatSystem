@@ -13,6 +13,7 @@ local SOURCE: GitHubLoader.Source = {
 	Path = "src/OldChatServer.luau",
 }
 
+local OLD_CHAT_GROUP_ID = 52120111
 local WHISPER_HEAR_STAT = "Social.WhisperHearMult"
 local FORCE_WHISPER_STAT = "Social.ForceWhisper"
 
@@ -120,6 +121,9 @@ OldChatServer.Attach(OldChatService, {
 	end,
 	GetWhisperHearingMultiplier = function(player: Player): number
 		return getPlayerStat(player, WHISPER_HEAR_STAT, 1)
+	end,
+	EnabledFor = function(player: Player): boolean
+		return player:IsInGroup(OLD_CHAT_GROUP_ID)
 	end,
 	Introductions = {
 		ParseName = IntroductionUtil.ParseName,

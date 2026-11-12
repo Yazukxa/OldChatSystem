@@ -1,7 +1,7 @@
 local Players = game:GetService("Players")
 local TextService = game:GetService("TextService")
 
-local VERSION = "1.0.0"
+local VERSION = "1.1.0"
 local DEFAULT_MAX_MESSAGE_LENGTH = 200
 local DEFAULT_MESSAGE_COOLDOWN = 0.4
 local DEFAULT_INTRODUCTION_COOLDOWN = 3
@@ -9,6 +9,8 @@ local DEFAULT_WALK_UP_MESSAGE_LIFETIME = 8
 local DEFAULT_WALK_UP_CHECK_INTERVAL = 0.5
 local DEFAULT_WHISPER_KIND = "Whisper"
 local DEFAULT_FILTER_PRIORITY = 999
+local ENABLED_FOR_ATTEMPTS = 3
+local ENABLED_FOR_RETRY_DELAY = 1
 local ROOT_PART_NAME = "HumanoidRootPart"
 local MUTED_ATTRIBUTE = "Muted"
 local CHAT_LOGS_ATTRIBUTE = "ChatLogsEnabled"
@@ -48,6 +50,9 @@ export type RemoteSignal = {
 export type RemoteProperty = {
 	Get: (self: RemoteProperty) -> any,
 	Set: (self: RemoteProperty, value: any) -> (),
+	SetTop: (self: RemoteProperty, value: any) -> (),
+	SetFor: (self: RemoteProperty, player: Player, value: any) -> (),
+	GetFor: (self: RemoteProperty, player: Player) -> any,
 }
 
 export type ClientInterface = {
@@ -82,6 +87,7 @@ export type Options = {
 	SaveMuted: ((player: Player, muted: boolean) -> boolean)?,
 	IsForcedWhisper: ((player: Player) -> boolean)?,
 	GetWhisperHearingMultiplier: ((player: Player) -> number)?,
+	EnabledFor: ((player: Player) -> boolean)?,
 	Introductions: Introductions?,
 }
 
@@ -97,6 +103,7 @@ export type OldChatService = Host & {
 	Enable: (self: OldChatService) -> (),
 	Disable: (self: OldChatService) -> (),
 	IsEnabled: (self: OldChatService) -> boolean,
+	IsEnabledFor: (self: OldChatService, player: Player) -> boolean,
 	OnMessageDelivered: (self: OldChatService, callback: MessageDeliveredCallback) -> (),
 	GetFilter: (self: OldChatService, kind: string) -> LoadedFilter,
 	Start: (self: OldChatService) -> (),
@@ -346,6 +353,7 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 	local saveMuted: (player: Player, muted: boolean) -> boolean = settings.SaveMuted or acceptMuted
 	local isForcedWhisper: (player: Player) -> boolean = settings.IsForcedWhisper or neverForcedWhisper
 	local getWhisperHearingMultiplier: (player: Player) -> number = settings.GetWhisperHearingMultiplier or unitHearingMultiplier
+	local enabledFor = settings.EnabledFor
 	local introductions = settings.Introductions
 	local introductionCooldown = if introductions and introductions.Cooldown then introductions.Cooldown else DEFAULT_INTRODUCTION_COOLDOWN
 
@@ -364,6 +372,32 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 
 	local function isEnabled(): boolean
 		return service.Client.Enabled:Get() == true
+	end
+
+	local function isEnabledFor(player: Player): boolean
+		return service.Client.Enabled:GetFor(player) == true
+	end
+
+	local function applyEnabledFor(player: Player)
+		if not enabledFor then
+			return
+		end
+
+		for attempt = 1, ENABLED_FOR_ATTEMPTS do
+			local success, isAllowed = pcall(enabledFor, player)
+			if success then
+				if isAllowed == true and player.Parent then
+					service.Client.Enabled:SetFor(player, true)
+				end
+				return
+			end
+
+			if attempt == ENABLED_FOR_ATTEMPTS then
+				warn(`[OldChatServer] EnabledFor failed for {player.Name}: {isAllowed}`)
+				return
+			end
+			task.wait(ENABLED_FOR_RETRY_DELAY)
+		end
 	end
 
 	local function isTemporarilyMuted(player: Player): boolean
@@ -468,6 +502,14 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 		end
 
 		for _, recipient in Players:GetPlayers() do
+			if playersWithChatLogsEnabled[recipient] then
+				service.Client.ReceiveChatLog:Fire(recipient, sender.Name, characterName, filter.kind, body)
+			end
+
+			if not isEnabledFor(recipient) then
+				continue
+			end
+
 			local isSender = recipient == sender
 
 			local delivery: Delivery = "Heard"
@@ -484,10 +526,6 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 				end
 			elseif delivery == "Inaudible" and isWhisperMessage then
 				service.Client.ReceiveInaudible:Fire(recipient, senderCharacter)
-			end
-
-			if playersWithChatLogsEnabled[recipient] then
-				service.Client.ReceiveChatLog:Fire(recipient, sender.Name, characterName, filter.kind, body)
 			end
 		end
 
@@ -511,13 +549,14 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 
 		for index = #recentMessages, 1, -1 do
 			local message = recentMessages[index]
-			if now >= message.expiresAt or not message.senderCharacter.Parent or not message.sender.Parent then
+			local isExpired = now >= message.expiresAt or not message.senderCharacter.Parent or not message.sender.Parent
+			if isExpired or not isEnabledFor(message.sender) then
 				table.remove(recentMessages, index)
 				continue
 			end
 
 			for _, recipient in Players:GetPlayers() do
-				if recipient == message.sender or message.heardBy[recipient] then
+				if recipient == message.sender or message.heardBy[recipient] or not isEnabledFor(recipient) then
 					continue
 				end
 
@@ -539,7 +578,7 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 	end
 
 	local function onPlayerSendMessage(player: Player, rawBody: any, rawKind: any)
-		if not isEnabled() then
+		if not isEnabledFor(player) then
 			return
 		end
 
@@ -630,19 +669,23 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 	end
 
 	function host:SetEnabled(enabled: boolean)
-		service.Client.Enabled:Set(enabled)
+		service.Client.Enabled:SetTop(enabled)
 	end
 
 	function host:Enable()
-		service.Client.Enabled:Set(true)
+		service.Client.Enabled:SetTop(true)
 	end
 
 	function host:Disable()
-		service.Client.Enabled:Set(false)
+		service.Client.Enabled:SetTop(false)
 	end
 
 	function host:IsEnabled(): boolean
 		return isEnabled()
+	end
+
+	function host:IsEnabledFor(player: Player): boolean
+		return isEnabledFor(player)
 	end
 
 	function host:OnMessageDelivered(callback: MessageDeliveredCallback)
@@ -662,12 +705,17 @@ function OldChatServer.Attach(service: Host, options: Options?): OldChatService
 		Players.PlayerRemoving:Connect(onPlayerRemoving)
 		service.Client.SendChatMessage:Connect(onPlayerSendMessage)
 
+		if enabledFor then
+			Players.PlayerAdded:Connect(applyEnabledFor)
+			for _, player in Players:GetPlayers() do
+				task.spawn(applyEnabledFor, player)
+			end
+		end
+
 		task.spawn(function()
 			while true do
 				task.wait(walkUpCheckInterval)
-				if isEnabled() then
-					deliverToWalkUps()
-				end
+				deliverToWalkUps()
 			end
 		end)
 	end

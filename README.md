@@ -30,7 +30,7 @@ OldChatServer.Attach(MyChatService, {
 })
 ```
 
-`Attach` adds the methods below to the service table you pass in. That table needs a `Client` table holding remote objects with the Knit/e2en shape: signals with `:Fire(player, ...)` and `:Connect(handler)`, and a property with `:Get()` and `:Set(value)`. The system calls `Start` itself under e2en; anywhere else, call `service:Start()` once your remotes exist.
+`Attach` adds the methods below to the service table you pass in. That table needs a `Client` table holding remote objects with the Knit/e2en shape: signals with `:Fire(player, ...)` and `:Connect(handler)`, and a property with `:Get()`, `:Set()`, `:SetTop()`, `:SetFor()` and `:GetFor()`. The system calls `Start` itself under e2en; anywhere else, call `service:Start()` once your remotes exist.
 
 ## Client contract
 
@@ -45,6 +45,8 @@ The in-game client has to match these remotes:
 | `ReceiveChatLog` | server → client | `username: string, characterName: string, kind: string, body: string` |
 
 The client works out `kind` from the message prefix (`/w `, `/i `, `/t `) and formats bubbles itself. The server only uses `kind` to look up hearing distance. It also sets the player attributes `Muted` and `ChatLogsEnabled`.
+
+`Enabled` is per player. A player can use OldChat when the global value is on, or when `EnabledFor` returned true for them on join. Messages only go to players who have it on. Chat logs still go to anyone with logs enabled, and the client decides whether to show them.
 
 ## Options
 
@@ -64,11 +66,12 @@ Everything is optional.
 | `SaveMuted` | returns `true` | Persist a mute; return `false` to refuse it |
 | `IsForcedWhisper` | `false` | Forces every message from this player down to whisper range |
 | `GetWhisperHearingMultiplier` | `1` | Scales whisper range for this listener |
+| `EnabledFor` | nobody | `(player) -> boolean`, checked once on join (retried if it errors). True keeps OldChat on for that player even while the global toggle is off, e.g. `player:IsInGroup(id)` |
 | `Introductions` | off | `{ ParseName, SanitizeName, Introduce, Cooldown? }` |
 
 ## Service methods
 
-`SetEnabled`, `Enable`, `Disable`, `IsEnabled`, `SetChatLogsEnabled`, `IsChatLogsEnabled`, `MutePlayer(player, seconds)`, `IsTemporarilyMuted`, `SetPlayerMuted(player, muted)`, `OnMessageDelivered(callback)`, `GetFilter(kind)`, `Start`.
+`SetEnabled`, `Enable`, `Disable`, `IsEnabled` (the global toggle; `EnabledFor` players stay on through it), `IsEnabledFor(player)`, `SetChatLogsEnabled`, `IsChatLogsEnabled`, `MutePlayer(player, seconds)`, `IsTemporarilyMuted`, `SetPlayerMuted(player, muted)`, `OnMessageDelivered(callback)`, `GetFilter(kind)`, `Start`.
 
 ## Updating and pinning
 
