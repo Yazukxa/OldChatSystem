@@ -30,9 +30,7 @@ OldChatServer.Attach(MyChatService, {
 })
 ```
 
-### Built-in copy (places without LoadStringEnabled)
-
-`LoadStringEnabled` and Allow HTTP Requests can't be turned on by any script, so a place that loads your framework but never had them ticked can't run the GitHub copy. To keep those places working, put a copy of `src/OldChatServer.luau` in the game as a ModuleScript named `OldChatServer` under the Service. The e2en example tries GitHub first and quietly uses that copy if `loadstring` or HTTP is off. `GitHubLoader` gives up straight away in that case instead of retrying. Update the copy whenever you push a new version, or those places stay on the older code.
+Every place that runs the loader needs **LoadStringEnabled** and **Allow HTTP Requests** ticked; no script can turn them on. Without them `GitHubLoader` gives up straight away, and the e2en example warns `[OldChatService] Running without chat: ...` naming the missing setting, then carries on with chat off so the rest of the game still boots.
 
 `Attach` adds the methods below to the service table you pass in. That table needs a `Client` table holding remote objects with the Knit/e2en shape: signals with `:Fire(player, ...)` and `:Connect(handler)`, and a property with `:Get()`, `:Set()`, `:SetTop()`, `:SetFor()` and `:GetFor()`. The system calls `Start` itself under e2en; anywhere else, call `service:Start()` once your remotes exist.
 
